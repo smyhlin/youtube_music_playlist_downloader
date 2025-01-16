@@ -13,6 +13,11 @@ of any YouTube playlist in the form of a music album folder
 If you run into any issues, you can try adding this program
 and your ffmpeg folder to the exclusions of your antivirus.
 
+## Difference from original
+- Add resolving link redirector for **unlisted** Privacy video status 
+- Add **unlisted** Privacy video Scaner 
+- Disable default Geo bypass to speed up download [can be enabled in program main menu(4)]
+
 ## Requirements
 - FFMPEG: Make sure you can run `ffmpeg` from the command line. If you are on Windows check your PATH.
 
