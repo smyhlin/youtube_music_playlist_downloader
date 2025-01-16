@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # YouTube Music Playlist Downloader
-version = "1.4.0"
+version = "1.4.1"
 
 import os
 import re
@@ -18,6 +18,7 @@ from langcodes import Language
 from yt_dlp import YoutubeDL, postprocessor
 from urllib.parse import urlparse, parse_qs
 from mutagen.id3 import ID3, APIC, TIT2, TPE1, TRCK, TALB, TDRC, WOAR, SYLT, USLT, error
+from check_accesible import check_videos, resolve_redirect_with_selenium
 
 # ID3 info:
 # APIC: thumbnail
@@ -69,7 +70,8 @@ def check_ffmpeg():
 def get_playlist_info(config: dict):
     ytdl_opts = {
         "quiet": True,
-        "geo_bypass": True,
+        "geo_bypass": config['use_geo_bypass'],
+        "nocheckcertificate": True,
         "dump_single_json": True,
         "extract_flat": True,
         "cookiefile": None if config["cookie_file"] == "" else config["cookie_file"],
@@ -99,7 +101,7 @@ def update_file_order(playlist_name, song_file_info, track_num, config: dict, mi
     else:
         file_name = song_file_info.file_name
     file_path = os.path.join(playlist_name, file_name)
-            
+
     # Update song index if not matched
     if song_file_info.track_num != track_num and config["include_metadata"]["track"]:
         if missing_video:
@@ -151,7 +153,8 @@ def get_song_info_ytdl(track_num, config: dict):
 
     ytdl_opts = {
         "quiet": True,
-        "geo_bypass": True,
+        "geo_bypass": config['use_geo_bypass'],
+        "nocheckcertificate": True,
         "outtmpl": name_format,
         "format": config["audio_format"],
         "cookiefile": None if config["cookie_file"] == "" else config["cookie_file"],
@@ -410,7 +413,8 @@ def download_song(link, playlist_name, track_num, config: dict):
             "preferredcodec": config["audio_codec"],
             "preferredquality": config["audio_quality"],
         }],
-        "geo_bypass": True
+        "geo_bypass": config['use_geo_bypass'],
+        "nocheckcertificate": True
     }
 
     if not config["verbose"]:
@@ -579,9 +583,10 @@ def setup_config(config: dict):
         "url": "",
         "reverse_playlist": False,
 
-        "use_title": True,
-        "use_uploader": True,
-        "use_playlist_name": True,
+        "use_title": False,
+        "use_uploader": False,
+        "use_playlist_name": False,
+        "use_geo_bypass": False,
 
         # File config options
         "sync_folder_name": True,
@@ -642,7 +647,6 @@ def generate_default_config(config: dict, config_file_name: str):
 def generate_playlist(base_config: dict, config_file_name: str, update: bool, force_update: bool, regenerate_metadata: bool, single_playlist: bool, current_playlist_name=None, track_num_to_update=None):
     # Get list of links in the playlist
     playlist = get_playlist_info(base_config)
-    
     if "entries" not in playlist:
         raise Exception("No videos found in playlist")
     playlist_entries = playlist["entries"]
@@ -691,7 +695,6 @@ def generate_playlist(base_config: dict, config_file_name: str, update: bool, fo
     # Update config for playlist
     write_config(os.path.join(playlist_name, config_file_name), base_config)
     song_file_infos = get_song_file_infos(playlist_name) # May raise exception for duplicate songs
-        
     track_num = 1
     skipped_videos = 0
     updated_video_ids = []
@@ -724,7 +727,10 @@ def generate_playlist(base_config: dict, config_file_name: str, update: bool, fo
             thread_count = None
         download_executor = concurrent.futures.ThreadPoolExecutor(max_workers=thread_count)
         update_executor = concurrent.futures.ThreadPoolExecutor(max_workers=thread_count)
-
+    inaccessible_videos = check_videos(base_config["url"])[1]
+    print('-'*30)
+    print(f'Inaccessible Videos: {inaccessible_videos}')
+    print('-'*30)
     # Download each item in the list
     for i, video_info in enumerate(playlist_entries):
         if video_info is None:
@@ -733,13 +739,21 @@ def generate_playlist(base_config: dict, config_file_name: str, update: bool, fo
 
         track_num = i + 1 - skipped_videos
         video_id = video_info["id"]
-        link = f"https://www.youtube.com/watch?v={video_id}"
+        link = f"https://music.youtube.com/watch?v={video_id}"
         song_file_info = song_file_infos.get(video_id)
 
+        if link in inaccessible_videos:
+            link = resolve_redirect_with_selenium(link)
+            video_id = link.split("?v=")[1]
+            
+            video_info["id"] = video_id
+            video_info["url"] = link
+            if not link:
+                raise Exception(f"Failed to resolve URL for {link}")
+        
         # Song must be downloaded already and match the current track num when updating a single song
         if track_num_to_update is not None and (song_file_info is None or song_file_info.track_num != track_num_to_update):
             continue
-
         config = get_override_config(video_id, base_config)
         updated_video_ids.append(video_id)
 
@@ -763,10 +777,11 @@ def generate_playlist(base_config: dict, config_file_name: str, update: bool, fo
             # Updating single song finished
             return
 
+        #! ADD APPENDING LIST TO COLLECT LINKS TO SENT THEM TO CORONTINE BOOST_LOAD
         if song_file_info is None:
             # Download audio if not downloaded
             print(f"Downloading '{link}'... ({track_num}/{len(playlist_entries) - skipped_videos})")
-            
+
             if base_config["use_threading"]:
                 download_futures.append(download_executor.submit(download_song_and_update, video_info, playlist, link, playlist_name, track_num, config))
             else:
@@ -851,6 +866,7 @@ def generate_playlist(base_config: dict, config_file_name: str, update: bool, fo
             track_num += 1
 
     print("Download finished.")
+    print(f"Skipped Videos count: {skipped_videos}")
 
 def get_existing_playlists(directory: str, config_file_name: str):
     playlists_data = []
@@ -1097,9 +1113,10 @@ if __name__ == "__main__":
 
                 if not already_downloaded and not update_existing:
                     config["reverse_playlist"] = get_bool_option_response("Reverse playlist?", default=False)
-                    config["use_title"] = get_bool_option_response("Use title instead of track name?", default=True)
-                    config["use_uploader"] = get_bool_option_response("Use uploader instead of artist?", default=True)
-                    config["use_playlist_name"] = get_bool_option_response("Use playlist name for album?", default=True)
+                    config["use_title"] = get_bool_option_response("Use title instead of track name?", default=False)
+                    config["use_uploader"] = get_bool_option_response("Use uploader instead of artist?", default=False)
+                    config["use_playlist_name"] = get_bool_option_response("Use playlist name for album?", default=False)
+                    config["use_geo_bypass"] = get_bool_option_response("Use Geo ByPass?: ", default=False)
 
                     generate_playlist(config, config_file_name, False, False, regenerate_metadata, False, current_playlist_name, None)
                     quit_enabled = True
@@ -1170,6 +1187,7 @@ if __name__ == "__main__":
                     f"- Use title instead of track name: {config['use_title']}",
                     f"- Use uploader instead of artist: {config['use_uploader']}",
                     f"- Use playlist name for album: {config['use_playlist_name']}",
+                    f"- Use Geo ByPass: {config['use_geo_bypass']}",
                 ]) + "\n")
 
                 if single_playlist:
@@ -1184,14 +1202,16 @@ if __name__ == "__main__":
                     last_use_title = config["use_title"]
                     last_use_uploader = config["use_uploader"]
                     last_use_playlist_name = config["use_playlist_name"]
+                    last_use_geo_bypass = config["use_geo_bypass"]
 
                     config["reverse_playlist"] = get_bool_option_response("Reverse playlist?", default=False)
-                    config["use_title"] = get_bool_option_response("Use title instead of track name?", default=True)
-                    config["use_uploader"] = get_bool_option_response("Use uploader instead of artist?", default=True)
-                    config["use_playlist_name"] = get_bool_option_response("Use playlist name for album?: ", default=True)
+                    config["use_title"] = get_bool_option_response("Use title instead of track name?", default=False)
+                    config["use_uploader"] = get_bool_option_response("Use uploader instead of artist?", default=False)
+                    config["use_playlist_name"] = get_bool_option_response("Use playlist name for album?: ", default=False)
+                    config["use_geo_bypass"] = get_bool_option_response("Use Geo ByPass?: ", default=False)
 
                     # Metadata needs to be regenerated if the settings have been changed
-                    if config["use_title"] != last_use_title or config["use_uploader"] != last_use_uploader or config["use_playlist_name"] != last_use_playlist_name:
+                    if config["use_title"] != last_use_title or config["use_uploader"] != last_use_uploader or config["use_playlist_name"] != last_use_playlist_name or config["use_geo_bypass"] != last_use_geo_bypass:
                         regenerate_metadata = True
                 elif single_playlist:
                     update_single_song = get_bool_option_response("Update a single song?", default=False)
