@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# YouTube Music Playlist Downloader
+# Ultimate YouTube Music Playlist Downloader
 version = "1.4.1"
 
 import os
@@ -18,7 +18,10 @@ from langcodes import Language
 from yt_dlp import YoutubeDL, postprocessor
 from urllib.parse import urlparse, parse_qs
 from mutagen.id3 import ID3, APIC, TIT2, TPE1, TRCK, TALB, TDRC, WOAR, SYLT, USLT, error
-from check_accesible import check_videos, resolve_redirect_with_selenium
+from scripts.check_accesible import check_videos, resolve_redirect_with_selenium
+from scripts.config import YoutubeConfig
+import tkinter as tk
+from tkinter import filedialog
 
 # ID3 info:
 # APIC: thumbnail
@@ -71,7 +74,7 @@ def get_playlist_info(config: dict):
     ytdl_opts = {
         "quiet": True,
         "geo_bypass": config['use_geo_bypass'],
-        "nocheckcertificate": True,
+        "nocheckcertificate": config['no_check_certificate'],
         "dump_single_json": True,
         "extract_flat": True,
         "cookiefile": None if config["cookie_file"] == "" else config["cookie_file"],
@@ -154,7 +157,7 @@ def get_song_info_ytdl(track_num, config: dict):
     ytdl_opts = {
         "quiet": True,
         "geo_bypass": config['use_geo_bypass'],
-        "nocheckcertificate": True,
+        "nocheckcertificate": config['no_check_certificate'],
         "outtmpl": name_format,
         "format": config["audio_format"],
         "cookiefile": None if config["cookie_file"] == "" else config["cookie_file"],
@@ -414,7 +417,7 @@ def download_song(link, playlist_name, track_num, config: dict):
             "preferredquality": config["audio_quality"],
         }],
         "geo_bypass": config['use_geo_bypass'],
-        "nocheckcertificate": True
+        "nocheckcertificate": config['no_check_certificate']
     }
 
     if not config["verbose"]:
@@ -551,9 +554,6 @@ def get_song_file_infos(playlist_name):
 
     return song_file_infos
 
-def setup_include_metadata_config():
-    return {key:True for key in get_metadata_map().keys() if key != "url"}
-
 def copy_config(src_config: dict, dst_config: dict):
     # Copy modified src_config values to the dst_config
     for key, value in dst_config.items():
@@ -578,35 +578,7 @@ def get_override_config(video_id, base_config: dict):
     return config
 
 def setup_config(config: dict):
-    new_config = {
-        # Console config options
-        "url": "",
-        "reverse_playlist": False,
-
-        "use_title": False,
-        "use_uploader": False,
-        "use_playlist_name": False,
-        "use_geo_bypass": False,
-
-        # File config options
-        "sync_folder_name": True,
-        "use_threading": True,
-        "thread_count": 0,
-
-        "retain_missing_order": False,
-        "name_format": "%(title)s-%(id)s.%(ext)s",
-        "track_num_in_name": True,
-        "audio_format": "bestaudio/best",
-        "audio_codec": "mp3",
-        "audio_quality": "5",
-        "image_format": "jpeg",
-        "lyrics_langs": [],
-        "strict_lang_match": False,
-        "cookie_file": "",
-        "cookies_from_browser": "",
-        "verbose": False,
-        "include_metadata": setup_include_metadata_config()
-    }
+    new_config = json.loads(YoutubeConfig().model_dump_json())
 
     # Copy config values to the new config
     copy_config(config, new_config)
@@ -867,6 +839,10 @@ def generate_playlist(base_config: dict, config_file_name: str, update: bool, fo
 
     print("Download finished.")
     print(f"Skipped Videos count: {skipped_videos}")
+    if skipped_videos:
+        print("="*30)
+        print('Probably coockies error.\n Remove it or try another')
+        print("="*30)
 
 def get_existing_playlists(directory: str, config_file_name: str):
     playlists_data = []
@@ -975,6 +951,23 @@ def get_numeric_option_response(prompt):
         print("Invalid response, please enter a valid number greater than 0.")
 
     return index
+
+def change_directory_gui():
+    """Changes the current working directory using a Tkinter GUI file dialog."""
+    
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+
+    target_path = filedialog.askdirectory(title="Select Target Playlists Folder")
+
+    if target_path: # Ensure a path was selected and not canceled
+        try:
+            os.chdir(target_path)
+            print(f"Changed directory to: {target_path}")
+        except OSError as e:
+            print(f"Error changing directory: {e}")
+    else:
+        print("Directory selection canceled.")
 
 if __name__ == "__main__":
     print("\n".join([
@@ -1255,9 +1248,14 @@ if __name__ == "__main__":
 
             if selected_option == OPTION_CHANGE:
                 # Change current working directory
-                target_path = input("Enter path of target playlists folder to change to: ")
+                # if os.name == 'nt':  # Check if the OS is Windows
+                #     change_directory_gui()
+                # else:
+                #     # if the OS is not windows it will fall back to the command line
+                #     target_path = input("Enter path of target playlists folder to change to: ")
+                #     os.chdir(target_path)
+                target_path = r'D:\GITHB\FNAF2'
                 os.chdir(target_path)
-
             if selected_option == OPTION_EXIT:
                 # Exit
                 quit_enabled = True
