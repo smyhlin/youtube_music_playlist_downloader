@@ -1,2 +1,1 @@
-from . import check_accesible
-from . import boost_load
+from .scripts import check_accesible, config
