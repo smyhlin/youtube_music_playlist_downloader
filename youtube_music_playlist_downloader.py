@@ -1248,14 +1248,13 @@ if __name__ == "__main__":
 
             if selected_option == OPTION_CHANGE:
                 # Change current working directory
-                # if os.name == 'nt':  # Check if the OS is Windows
-                #     change_directory_gui()
-                # else:
-                #     # if the OS is not windows it will fall back to the command line
-                #     target_path = input("Enter path of target playlists folder to change to: ")
-                #     os.chdir(target_path)
-                target_path = r'D:\GITHB\FNAF2'
-                os.chdir(target_path)
+                if os.name == 'nt':  # Check if the OS is Windows
+                    change_directory_gui()
+                else:
+                    # if the OS is not windows it will fall back to the command line
+                    target_path = input("Enter path of target playlists folder to change to: ")
+                    os.chdir(target_path)
+
             if selected_option == OPTION_EXIT:
                 # Exit
                 quit_enabled = True
