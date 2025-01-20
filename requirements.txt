@@ -4,3 +4,5 @@ Pillow
 requests
 yt-dlp
 selenium
+environs
+pydantic
