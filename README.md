@@ -31,6 +31,7 @@ Alternatively, you can clone and install from source with Python 3.
 git clone https://github.com/onnowhere/youtube_music_playlist_downloader
 cd youtube_music_playlist_downloader
 pip install -r requirements.txt
+rename .env_temp to .env and set parms you need
 ```
 
 ## Usage
@@ -54,7 +55,8 @@ python scripts/build.py
 On some systems, you may need to use `py` or `python3` instead of `python`.
 
 ## Config
-A `.playlist_config.json` file is generated for all album folders and contains the following adjustable fields.
+- **First of all** rename .env_temp to .env and set parms you need
+- A `.playlist_config.json` file is generated for all album folders and contains the following adjustable fields.
 
 
 ### Options adjustable using the program
